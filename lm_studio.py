@@ -1,4 +1,4 @@
-import openai
+import base64
 
 class LMStudio:
     def __init__(self, model_id, lm_temperature, conversation_history, server_ip):
@@ -16,7 +16,8 @@ class LMStudio:
             server_ip (str): The IP address of the server hosting the language model.
             client (OpenAI): The OpenAI client initialized with the server's base URL and API key.
         """
-        from openai import OpenAI 
+        from openai import OpenAI
+        import requests
 
         self.model_id = model_id
         self.lm_temperature = lm_temperature
@@ -86,3 +87,54 @@ class LMStudio:
 
         self.add_assistant_message(new_message["content"])
         return new_message["content"]
+
+    def generate_response_with_image(self, image_path, live_print=False):
+            """
+            Generates a response from the assistant model based on the conversation history and an attached image.
+            
+            Args:
+                image_path (str): The local file path to the image.
+                live_print (bool, optional): If True, prints the response in real-time as it is generated. Defaults to False.
+            
+            Returns:
+                str: The generated response content from the assistant.
+            """
+            # Read the image and encode it to base64
+            try:
+                with open(image_path, "rb") as image_file:
+                    base64_image = base64.b64encode(image_file.read()).decode("utf-8")
+            except Exception as e:
+                print(f"Couldn't read the image. Error: {e}")
+                return ""
+
+            # Add user message indicating an image was attached
+            self.add_user_message("user attached a photo")
+
+            # Prepare the message with the image
+            image_message = [
+                {"type": "text", "text": "What’s in this image?"},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}},
+            ]
+
+            # Add the image message to the history
+            self.history.append({"role": "user", "content": image_message})
+
+            # Generate the response
+            completion = self.client.chat.completions.create(
+                model="lmstudio-community/Meta-Llama-3.1-8B-Instruct-GGUF",
+                messages=self.history,
+                temperature=0.7,
+                stream=True,
+            )
+
+            new_message = {"role": "assistant", "content": ""}
+
+            for chunk in completion:
+                if chunk.choices[0].delta.content:
+                    if live_print:
+                        print(chunk.choices[0].delta.content, end="", flush=True)
+                    new_message["content"] += chunk.choices[0].delta.content
+
+            # Add the assistant's detailed description of the image to the history
+            self.add_assistant_message(new_message["content"])
+            return new_message["content"]
